@@ -3,18 +3,44 @@ from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
-from src.gap_analyzer import analyze_gaps
-from src.intent_extractor import extract_intent
-from src.llm_crawler import crawl_llms
-from src.rate_limit import FREE_DAILY_LIMIT, fingerprint_from_headers, record_run, runs_remaining
+from src.gap_analyzer import run_full_diagnosis
+from src.rate_limit import (
+    FREE_DAILY_LIMIT,
+    fingerprint_from_headers,
+    record_run,
+    runs_remaining,
+)
 from src.report_builder import build_report
-from src.serp_crawler import crawl_serps
 
 load_dotenv()
 
-st.set_page_config(page_title="Intent Gap Analyzer", layout="wide")
+st.set_page_config(page_title="Intent Gap Analyzer", layout="wide", page_icon=":anchor:")
+
+# ZeroNorth brand
+NAVY = "#0A1F3D"
+TEAL = "#00B5B0"
+
+CUSTOM_CSS = f"""
+<style>
+  html, body, [class*="css"] {{ font-family: "Inter", -apple-system, system-ui, sans-serif; }}
+  .hero-band {{
+    background: linear-gradient(135deg, {NAVY} 0%, #14315a 100%);
+    color: white; padding: 1.5rem 1.75rem; border-radius: 14px; margin-bottom: 1.5rem;
+  }}
+  .hero-band h1 {{ margin: 0; font-size: 1.7rem; font-weight: 700; letter-spacing: -0.01em; }}
+  .hero-band p  {{ margin: 0.35rem 0 0; color: #c2cce0; font-size: 0.95rem; }}
+  .health-num {{ font-size: 3.2rem; font-weight: 800; color: {TEAL}; line-height: 1; }}
+  .health-suf {{ font-size: 1.1rem; color: #8a96ad; margin-left: 4px; }}
+  .health-verdict {{ font-size: 1rem; color: #e6ecf5; margin-top: 0.25rem; }}
+  .bucket-pill {{
+    display: inline-block; background: #e8f7f6; color: {TEAL};
+    padding: 2px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  }}
+</style>
+"""
 
 
 def get_fingerprint() -> str:
@@ -25,57 +51,269 @@ def get_fingerprint() -> str:
     return fingerprint_from_headers(headers)
 
 
-def main() -> None:
-    host_has_key = bool(os.environ.get("GROQ_API_KEY"))
-    fingerprint = get_fingerprint()
+def init_history():
+    if "history" not in st.session_state:
+        st.session_state.history = []
+    if "queued_keyword" not in st.session_state:
+        st.session_state.queued_keyword = ""
+    if "queued_url" not in st.session_state:
+        st.session_state.queued_url = ""
 
+
+def push_history(entry: dict):
+    st.session_state.history = ([entry] + st.session_state.history)[:5]
+
+
+def render_sidebar(host_has_key: bool, fingerprint: str):
+    user_key = ""
     with st.sidebar:
-        st.title("Intent Gap Analyzer")
-        st.markdown(
-            "Find what your page is missing for **SEO** (Google, Bing, DuckDuckGo) and "
-            "**GEO** (Llama 3.3, GPT-4o-mini, Claude)."
-        )
+        st.markdown(f"### Intent Gap Analyzer")
+        st.caption("Diagnose **why** a URL isn't ranking across 5 buckets.")
         st.divider()
 
         st.subheader("Your Groq key (optional)")
         st.caption(
-            "Free key from "
-            "[console.groq.com](https://console.groq.com/keys). "
-            "With your own key: unlimited runs. Without: free trial below."
+            "Free key from [console.groq.com](https://console.groq.com/keys). "
+            "With your own key: unlimited runs."
         )
         user_key = st.text_input("Groq API key", type="password", label_visibility="collapsed")
 
         if user_key:
             st.success("Using your key. Unlimited runs.")
-            unlimited = True
-            remaining = None
+            can_run, remaining = True, None
         elif host_has_key:
             remaining = runs_remaining(fingerprint)
-            unlimited = False
-            if remaining > 0:
+            can_run = remaining > 0
+            if can_run:
                 st.info(f"Free trial: **{remaining}/{FREE_DAILY_LIMIT}** runs left today.")
             else:
-                st.warning(
-                    f"Free trial used up for today. "
-                    f"Paste your free Groq key above for unlimited runs."
-                )
+                st.warning("Free trial used up. Paste your own Groq key above.")
         else:
-            unlimited = False
-            remaining = 0
-            st.error("This host has no shared key configured. Paste your own Groq key above.")
+            can_run, remaining = False, 0
+            st.error("Host has no shared key. Paste your own Groq key above.")
 
-    st.title("Intent Gap Analyzer")
-    st.caption("Analyze a URL's intent gap across search engines + LLMs. Get prioritized fixes.")
+        st.divider()
+        st.subheader("Recent runs")
+        if not st.session_state.history:
+            st.caption("No runs yet. Run your first analysis below.")
+        else:
+            for i, entry in enumerate(st.session_state.history):
+                with st.container(border=True):
+                    st.markdown(
+                        f"**{entry.get('health_score', 0)}/100** · {entry.get('url', '')[:50]}"
+                    )
+                    st.caption(
+                        f"{entry.get('timestamp', '')} · "
+                        f"{', '.join(entry.get('keywords', [])[:2])}"
+                    )
 
-    with st.form("analyze"):
-        url = st.text_input("Target URL", placeholder="https://example.com/some-page")
+    return user_key, can_run, remaining
+
+
+def render_diagnosis(diagnosis: dict, html_bytes: bytes, report_path: Path):
+    health = diagnosis.get("health_score", 0)
+    verdict = diagnosis.get("verdict", "")
+
+    st.markdown(
+        f"""
+        <div class="hero-band">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:2rem;flex-wrap:wrap;">
+            <div>
+              <h1>{diagnosis.get('url', '')}</h1>
+              <p>Keywords: {', '.join(diagnosis.get('keywords', []))}</p>
+            </div>
+            <div style="text-align:right;">
+              <span class="health-num">{health}</span><span class="health-suf">/100</span>
+              <div class="health-verdict">{verdict}</div>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.subheader("Top 5 ranked fixes")
+    fixes = diagnosis.get("ranked_fixes") or []
+    valid_fixes = [f for f in fixes if isinstance(f, dict) and "error" not in f]
+    if valid_fixes:
+        for f in valid_fixes:
+            with st.container(border=True):
+                imp = f.get("expected_impact", 0)
+                cols = st.columns([1, 8, 2])
+                with cols[0]:
+                    st.markdown(f"### {f.get('rank', '?')}")
+                with cols[1]:
+                    st.markdown(f"**{f.get('action', '')}**")
+                    st.caption(f.get("why_this_matters", ""))
+                with cols[2]:
+                    st.markdown(
+                        f"<span class='bucket-pill'>{f.get('bucket', '')}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(f"impact **{imp}/10**  ·  {f.get('effort_hours', '?')}h")
+    else:
+        st.info("No ranked fixes returned.")
+
+    # 5-bucket tabs
+    st.subheader("5-bucket diagnosis")
+    tab_intent, tab_auth, tab_diff, tab_dist, tab_compet = st.tabs(
+        ["1. Intent", "2. Authority", "3. Differentiation", "4. Distribution", "5. Competitiveness"]
+    )
+
+    per_keyword = diagnosis.get("per_keyword", {})
+
+    with tab_intent:
+        for kw, pk in per_keyword.items():
+            b1 = pk.get("bucket1_intent") or {}
+            with st.container(border=True):
+                st.markdown(f"**Keyword:** `{kw}`  ·  **Match score:** {b1.get('match_score', 0)}/100  ·  **Verdict:** {b1.get('verdict', '—')}")
+                st.caption(
+                    f"Target format: **{b1.get('target_format', '—')}** vs Winners': "
+                    f"**{b1.get('winners_dominant_format', '—')}**  ·  "
+                    f"Target angle: **{b1.get('target_angle', '—')}** vs Winners': "
+                    f"**{b1.get('winners_dominant_angle', '—')}**"
+                )
+                if b1.get("rewrite_instruction"):
+                    st.markdown(f"**Rewrite:** {b1['rewrite_instruction']}")
+
+    with tab_auth:
+        for kw, pk in per_keyword.items():
+            b2 = pk.get("bucket2_authority") or {}
+            with st.container(border=True):
+                st.markdown(
+                    f"**Keyword:** `{kw}`  ·  **Gap:** {b2.get('authority_gap', '—')}  ·  "
+                    f"target {b2.get('target_score', 0)} vs winners median {b2.get('winner_median_score', '—')}"
+                )
+                t = b2.get("target") or {}
+                if t:
+                    st.caption(
+                        f"Domain: `{t.get('domain')}` · age {t.get('age_years')}y · "
+                        f"Reddit mentions: {t.get('reddit_mentions')} · "
+                        f"LinkedIn mentions: {t.get('linkedin_mentions')} · "
+                        f"Bing outbound: {t.get('bing_outbound_links')}"
+                    )
+                if b2.get("interpretation"):
+                    st.write(b2["interpretation"])
+
+    with tab_diff:
+        d = diagnosis.get("differentiation") or {}
+        with st.container(border=True):
+            st.markdown(
+                f"**Score:** {d.get('differentiation_score', 0)}/100  ·  "
+                f"**Verdict:** {d.get('verdict', '—')}  ·  "
+                f"**Similarity to winners:** {d.get('similarity_to_winners', 0)}/100"
+            )
+        if d.get("rubric"):
+            st.markdown("**7-point rubric**")
+            rows = [
+                {"dimension": dim.replace("_", " "), "score": f"{v.get('score', 0)}/10", "evidence": v.get("evidence", "")}
+                for dim, v in d["rubric"].items()
+            ]
+            st.table(rows)
+        if d.get("maritime_suggestions"):
+            st.markdown("**Maritime-flavoured suggestions**")
+            for s in d["maritime_suggestions"]:
+                st.markdown(f"- {s}")
+
+    with tab_dist:
+        dist = diagnosis.get("distribution") or {}
+        with st.container(border=True):
+            st.markdown(
+                f"**Score:** {dist.get('distribution_score', 0)}/100  ·  "
+                f"**Verdict:** {dist.get('verdict', '—')}"
+            )
+            if dist.get("interpretation"):
+                st.write(dist["interpretation"])
+        if dist.get("channels_audited"):
+            rows = [
+                {
+                    "channel": c.get("channel"),
+                    "category": (c.get("category") or "").replace("_", " "),
+                    "mentions": c.get("mentions"),
+                    "status": "present" if c.get("hit") else "missing",
+                }
+                for c in dist["channels_audited"]
+            ]
+            st.table(rows)
+        if dist.get("suggestions"):
+            st.markdown("**Channel actions**")
+            for sg in dist["suggestions"]:
+                st.markdown(f"- **{sg.get('channel')}**: {sg.get('action')}")
+
+    with tab_compet:
+        for kw, pk in per_keyword.items():
+            b5 = pk.get("bucket5_competitiveness") or {}
+            with st.container(border=True):
+                st.markdown(
+                    f"**Keyword:** `{kw}`  ·  **Difficulty:** {b5.get('difficulty_label', '—')} "
+                    f"({b5.get('difficulty_score', 0)}/100)  ·  "
+                    f"**Realistic to rank:** {'yes' if b5.get('realistic_to_rank') else 'no'}"
+                )
+                if b5.get("gap_assessment"):
+                    st.write(b5["gap_assessment"])
+                variants = b5.get("long_tail_variants") or []
+                valid_variants = [v for v in variants if isinstance(v, dict) and "error" not in v]
+                if valid_variants:
+                    st.markdown("**Narrower long-tail variants**")
+                    for j, v in enumerate(valid_variants):
+                        cols = st.columns([7, 2])
+                        with cols[0]:
+                            st.markdown(
+                                f"- `{v.get('keyword')}` — {v.get('why_narrower', '')} "
+                                f"_(competition: {v.get('estimated_competition', '—')})_"
+                            )
+                        with cols[1]:
+                            if st.button(
+                                "Re-run with this",
+                                key=f"rerun_{kw}_{j}",
+                            ):
+                                st.session_state.queued_keyword = v.get("keyword", "")
+                                st.session_state.queued_url = diagnosis.get("url", "")
+                                st.rerun()
+
+    # Download + inline report
+    st.subheader("Full HTML report")
+    st.download_button(
+        "Download HTML report",
+        data=html_bytes,
+        file_name=report_path.name,
+        mime="text/html",
+    )
+    with st.expander("View full report inline"):
+        components.html(html_bytes.decode("utf-8"), height=1600, scrolling=True)
+
+
+def main() -> None:
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    init_history()
+    host_has_key = bool(os.environ.get("GROQ_API_KEY"))
+    fingerprint = get_fingerprint()
+
+    user_key, can_run, remaining = render_sidebar(host_has_key, fingerprint)
+
+    st.title(":anchor: Intent Gap Analyzer")
+    st.caption("5-bucket diagnostic for why your URL isn't ranking. Maritime context bundled in.")
+
+    queued_kw = st.session_state.queued_keyword
+    queued_url = st.session_state.queued_url
+
+    with st.form("analyze_form"):
+        url = st.text_input(
+            "Target URL",
+            value=queued_url or "",
+            placeholder="https://zeronorth.com/products/bunker-pricer",
+        )
         keywords_raw = st.text_input(
             "Keywords (comma-separated)",
-            placeholder="primary keyword, secondary keyword, tertiary keyword",
+            value=queued_kw or "",
+            placeholder="bunker price intelligence, maritime fuel pricing",
         )
-        st.caption("Tip: keep it to 1–3 keywords on the free tier. SERP scraping rate-limits fast.")
-        can_run = unlimited or (host_has_key and (remaining or 0) > 0)
+        st.caption("Tip: 1–3 keywords on the free tier. SERP scraping rate-limits fast.")
         submitted = st.form_submit_button("Analyze", type="primary", disabled=not can_run)
+
+    if queued_kw or queued_url:
+        st.session_state.queued_keyword = ""
+        st.session_state.queued_url = ""
 
     if not submitted:
         return
@@ -86,33 +324,25 @@ def main() -> None:
 
     api_key = user_key or os.environ.get("GROQ_API_KEY", "")
     if not api_key:
-        st.error("No API key available. Paste one in the sidebar.")
+        st.error("No Groq API key available. Paste one in the sidebar.")
         return
 
     os.environ["GROQ_API_KEY"] = api_key
     keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
 
+    # 5-stage progress bar
     progress = st.progress(0, text="Starting...")
     status = st.empty()
 
     try:
-        status.info("Step 1 of 5: Fetching target URL and classifying intent")
-        target_intent = extract_intent(url.strip())
-        progress.progress(20, text="Intent extracted")
+        status.info("Stage 1/5: Crawling target page + SERPs + LLMs")
+        progress.progress(15, text="Crawling target + SERPs + LLMs")
 
-        status.info(f"Step 2 of 5: Crawling SERPs ({len(keywords)} keyword(s))")
-        serp_data = crawl_serps(keywords)
-        progress.progress(45, text="SERP data collected")
+        # Real work happens inside run_full_diagnosis. We use coarse stages.
+        diagnosis = run_full_diagnosis(url.strip(), keywords)
+        progress.progress(60, text="Bucket diagnostics done")
 
-        status.info(f"Step 3 of 5: Crawling LLMs ({len(keywords)} keyword(s))")
-        llm_data = crawl_llms(keywords)
-        progress.progress(70, text="LLM citations collected")
-
-        status.info("Step 4 of 5: Analyzing intent gaps")
-        gap_report = analyze_gaps(url.strip(), target_intent, keywords, serp_data, llm_data)
-        progress.progress(85, text="Gaps analyzed")
-
-        status.info("Step 5 of 5: Building report")
+        status.info("Stage 4/5: Building report")
         output_dir = Path("/tmp/intent_gap_reports")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -120,138 +350,36 @@ def main() -> None:
         build_report(
             output_path=report_path,
             target_url=url.strip(),
-            target_intent=target_intent,
+            target_intent=diagnosis.get("target_intent", {}),
             keywords=keywords,
-            serp_data=serp_data,
-            llm_data=llm_data,
-            gap_report=gap_report,
+            serp_data=diagnosis.get("serp_data", {}),
+            llm_data=diagnosis.get("llm_data", {}),
+            gap_report=diagnosis,
         )
+        progress.progress(85, text="Report built")
+
+        status.info("Stage 5/5: Rendering")
+        if not user_key and host_has_key:
+            record_run(fingerprint)
         progress.progress(100, text="Done")
         status.success("Analysis complete.")
 
-        if not user_key and host_has_key:
-            record_run(fingerprint)
+        push_history({
+            "url": url.strip(),
+            "keywords": keywords,
+            "timestamp": datetime.now().strftime("%H:%M %d-%b"),
+            "health_score": diagnosis.get("health_score", 0),
+            "verdict": diagnosis.get("verdict", ""),
+            "report_path": str(report_path),
+        })
     except Exception as e:
         status.error(f"Analysis failed: {e}")
         st.exception(e)
         return
 
     st.divider()
-
-    st.subheader("Target page intent")
-    intent = target_intent.get("intent", {}) or {}
-    page = target_intent.get("page", {}) or {}
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**Primary topic:** {intent.get('primary_topic', '—')}")
-        st.markdown(f"**Intent type:** {intent.get('intent_type', '—')}")
-        st.markdown(f"**Audience:** {intent.get('target_audience', '—')}")
-    with col2:
-        st.markdown(f"**Has schema:** {'yes' if page.get('schema_snippets') else 'no'}")
-        st.markdown(f"**H1:** {', '.join(page.get('h1', []) or ['—'])}")
-        st.markdown(f"**# of H2s:** {len(page.get('h2', []) or [])}")
-    st.markdown(f"**Key entities:** {', '.join(intent.get('key_entities', []) or ['—'])}")
-    st.markdown(f"**Content angles:** {', '.join(intent.get('content_angles', []) or ['—'])}")
-
-    st.subheader("Brand mention in LLM answers")
-    st.caption(
-        "Did each free-tier LLM mention your domain or brand name in its answer? "
-        "Note: free-tier LLMs (Groq Llama, DDG Chat) have no web access, so a 'yes' here "
-        "means the model already knows your brand. A 'no' is normal for less well-known brands."
-    )
-    cited = gap_report.get("target_cited_in_llms", {})
-    if cited:
-        rows = []
-        for kw, statuses in cited.items():
-            rows.append({
-                "keyword": kw,
-                "Groq Llama 3.3": "mentioned" if statuses.get("groq_llama") else "no mention",
-                "DDG GPT-4o-mini": "mentioned" if statuses.get("ddg_gpt4o_mini") else "no mention",
-                "DDG Claude": "mentioned" if statuses.get("ddg_claude") else "no mention",
-                "Bing Copilot": "n/a (stub)",
-            })
-        st.table(rows)
-    else:
-        st.info("No mention data returned. Check the full report below.")
-
-    landscape = gap_report.get("competitor_landscape", [])
-    if landscape:
-        st.subheader("Competitor landscape")
-        for entry in landscape:
-            with st.container(border=True):
-                st.markdown(f"**Keyword:** {entry.get('keyword', '—')}")
-                top3 = entry.get("top_3_urls", []) or []
-                if top3:
-                    st.markdown("**Top 3 ranking URLs:**")
-                    for u in top3:
-                        st.markdown(f"- {u}")
-                if entry.get("common_angles"):
-                    st.markdown(f"**Common angles winners cover:** {', '.join(entry['common_angles'])}")
-                if entry.get("what_winners_do_target_doesnt"):
-                    st.markdown(f"**What winners do that you don't:** {entry['what_winners_do_target_doesnt']}")
-
-    st.subheader("SEO gaps")
-    seo_gaps = gap_report.get("seo_gaps", [])
-    if seo_gaps:
-        for gap in seo_gaps:
-            with st.container(border=True):
-                priority = gap.get("priority", "P2")
-                st.markdown(f"**[{priority}]** · *{gap.get('gap_type', '')}* — keyword: *{gap.get('keyword', '')}*")
-                if gap.get("competitor_evidence"):
-                    st.markdown(f"**Evidence:** {gap['competitor_evidence']}")
-                if gap.get("fix"):
-                    st.markdown(f"**Fix:** {gap['fix']}")
-    else:
-        st.info("No SEO gaps returned.")
-
-    st.subheader("GEO gaps")
-    geo_gaps = gap_report.get("geo_gaps", [])
-    if geo_gaps:
-        for gap in geo_gaps:
-            with st.container(border=True):
-                priority = gap.get("priority", "P2")
-                st.markdown(f"**[{priority}]** · *{gap.get('llm', '')}* — keyword: *{gap.get('keyword', '')}*")
-                if gap.get("llm_answer_summary"):
-                    st.markdown(f"**What the LLM said:** {gap['llm_answer_summary']}")
-                if gap.get("competitors_in_answer"):
-                    st.markdown(f"**Competitors mentioned:** {', '.join(gap['competitors_in_answer'])}")
-                if gap.get("fix"):
-                    st.markdown(f"**Fix:** {gap['fix']}")
-    else:
-        st.info("No GEO gaps returned.")
-
-    if gap_report.get("seo_vs_geo_divergence"):
-        st.subheader("SEO vs GEO divergence")
-        st.info(gap_report["seo_vs_geo_divergence"])
-
-    st.subheader("Top recommendations")
-    recs = gap_report.get("top_recommendations", [])
-    if recs:
-        for rec in recs:
-            with st.container(border=True):
-                priority = rec.get("priority", "P2")
-                channel = rec.get("channel", "")
-                impact = rec.get("estimated_impact", "")
-                header_parts = [f"**[{priority}]**", f"*{channel}*"]
-                if impact:
-                    header_parts.append(f"impact: **{impact}**")
-                st.markdown(" · ".join(header_parts) + f" — **{rec.get('action', '')}**")
-                if rec.get("rationale"):
-                    st.write(rec["rationale"])
-    else:
-        st.info("No recommendations returned.")
-
-    st.subheader("Full report")
     html_bytes = report_path.read_bytes()
-    st.download_button(
-        "Download HTML report",
-        data=html_bytes,
-        file_name=report_path.name,
-        mime="text/html",
-    )
-    with st.expander("View full report inline"):
-        import streamlit.components.v1 as components
-        components.html(html_bytes.decode("utf-8"), height=1400, scrolling=True)
+    render_diagnosis(diagnosis, html_bytes, report_path)
 
 
 if __name__ == "__main__":
