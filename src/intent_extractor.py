@@ -116,3 +116,84 @@ def extract_intent(url: str) -> dict:
     page = fetch_page(url)
     intent = classify_intent(page)
     return {"page": page, "intent": intent}
+
+
+def compare_intent_to_serp(target_intent: dict, serp_top_results: list) -> dict:
+    """Bucket 1: Compare target page intent/format/angle against top 5 SERP results.
+
+    Returns a dict:
+        match_score: 0-100
+        target_format: inferred format of target
+        winners_dominant_format: most common format among winners
+        format_match: bool
+        target_angle: inferred angle of target
+        winners_dominant_angle: most common angle among winners
+        angle_match: bool
+        verdict: "matches" | "partial_match" | "mismatches"
+        rewrite_instruction: specific text describing what to change on target page
+    """
+    if not serp_top_results:
+        return {
+            "match_score": 0,
+            "verdict": "no_serp_data",
+            "rewrite_instruction": "No SERP data available — cannot compare intent.",
+            "error": "empty serp_top_results",
+        }
+
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+    target_page = target_intent.get("page", {}) or {}
+    target_intent_obj = target_intent.get("intent", {}) or {}
+
+    top5 = serp_top_results[:5]
+
+    prompt = f"""You are an expert SEO intent analyst. Compare a target page against the top SERP results for a keyword. Determine whether the target page's FORMAT and ANGLE match what's actually ranking.
+
+TARGET PAGE:
+- Title: {target_page.get('title', '')}
+- H1: {target_page.get('h1', [])}
+- H2s: {target_page.get('h2', [])[:10]}
+- Meta: {target_page.get('meta_description', '')}
+- Inferred intent: {json.dumps(target_intent_obj)}
+
+TOP 5 SERP RESULTS (title, url, snippet):
+{json.dumps(top5, indent=2)[:3000]}
+
+ANALYSIS RULES:
+- FORMAT examples: product_page, listicle, comparison, how_to_guide, definition, case_study, tool, calculator, review, ultimate_guide, comparison_table, faq
+- ANGLE examples: problem_focused, solution_focused, pricing_focused, feature_focused, beginner_guide, expert_deep_dive, alternatives, vs_competitor
+- match_score: 100 if format AND angle both match dominant pattern; 50 if one matches; 0 if neither
+- rewrite_instruction: a specific 1-3 sentence action ("Convert the target page from a product page to a comparison-style guide because 4 of top 5 results are listicle/comparison format"). Cite specific competitor URLs.
+
+Return ONLY this JSON schema:
+{{
+  "match_score": 0-100 integer,
+  "target_format": "string",
+  "winners_dominant_format": "string",
+  "format_match": true|false,
+  "target_angle": "string",
+  "winners_dominant_angle": "string",
+  "angle_match": true|false,
+  "verdict": "matches" | "partial_match" | "mismatches",
+  "rewrite_instruction": "specific action text referencing competitor URLs"
+}}"""
+
+    try:
+        text = _groq_call_with_retry(client, prompt)
+        text = _strip_code_fence(text)
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        return {
+            "match_score": 0,
+            "verdict": "parse_error",
+            "rewrite_instruction": "",
+            "error": f"could not parse JSON: {e}",
+            "raw": text if "text" in dir() else "",
+        }
+    except Exception as e:
+        return {
+            "match_score": 0,
+            "verdict": "error",
+            "rewrite_instruction": "",
+            "error": str(e),
+        }
