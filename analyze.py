@@ -6,11 +6,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from intent_extractor import extract_intent
-from serp_crawler import crawl_serps
-from llm_crawler import crawl_llms
-from gap_analyzer import analyze_gaps
-from report_builder import build_report
+from src.intent_extractor import extract_intent
+from src.serp_crawler import crawl_serps
+from src.llm_crawler import crawl_llms
+from src.gap_analyzer import analyze_gaps
+from src.report_builder import build_report
 
 
 def main() -> None:

@@ -9,7 +9,9 @@ TEMPLATE_NAME = "report.html.j2"
 def _find_template_dir() -> Path:
     here = Path(__file__).resolve().parent
     candidates = [
+        here.parent / "templates",
         here / "templates",
+        here.parent,
         here,
         Path("/app/templates"),
         Path("/app"),

@@ -5,12 +5,12 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-from gap_analyzer import analyze_gaps
-from intent_extractor import extract_intent
-from llm_crawler import crawl_llms
-from rate_limit import FREE_DAILY_LIMIT, fingerprint_from_headers, record_run, runs_remaining
-from report_builder import build_report
-from serp_crawler import crawl_serps
+from src.gap_analyzer import analyze_gaps
+from src.intent_extractor import extract_intent
+from src.llm_crawler import crawl_llms
+from src.rate_limit import FREE_DAILY_LIMIT, fingerprint_from_headers, record_run, runs_remaining
+from src.report_builder import build_report
+from src.serp_crawler import crawl_serps
 
 load_dotenv()
 
