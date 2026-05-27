@@ -22,6 +22,19 @@ ZeroNorth operates in maritime/shipping SaaS. Their target audience and themes:
 - Geographies: major bunker hubs (Rotterdam, Singapore, Fujairah), shipping lanes
 """.strip()
 
+GENERIC_CONTEXT = """
+Generic B2B SaaS / content marketing context. Suggest long-tail variants by adding specificity
+the target audience would actually search for — role, industry, region, integration, use case,
+problem — based on the SERP winners and the target page's actual subject. Do not invent
+domain-specific context unless it's clearly supported by the page content.
+""".strip()
+
+
+def _pick_context(target_url: str) -> str:
+    if target_url and "zeronorth.com" in target_url.lower():
+        return MARITIME_CONTEXT
+    return GENERIC_CONTEXT
+
 
 def _strip_code_fence(text: str) -> str:
     text = text.strip()
@@ -65,16 +78,19 @@ def _groq_call_with_retry(client, system: str, user: str, max_retries: int = 3) 
     raise last_error
 
 
-def _suggest_long_tail(client, keyword: str, target_intent: dict, winner_summaries: list) -> list:
-    """Ask Groq for 3 narrower maritime long-tail variants of the keyword."""
+def _suggest_long_tail(client, keyword: str, target_intent: dict, winner_summaries: list, target_url: str = "") -> list:
+    """Ask Groq for 3 narrower long-tail variants of the keyword (context picked from URL)."""
+    is_maritime = bool(target_url and "zeronorth.com" in target_url.lower())
+    context = _pick_context(target_url)
     system_prompt = (
-        "You suggest narrower, more rankable long-tail keyword variants for a maritime SaaS company. "
-        "Use the maritime context provided to make variants concrete and audience-specific."
+        "You suggest narrower, more rankable long-tail keyword variants. "
+        + ("Use the maritime context provided." if is_maritime else "Use the generic B2B SaaS context — tie variants to what the page actually covers.")
     )
+    context_label = "MARITIME CONTEXT" if is_maritime else "EVALUATION CONTEXT"
     user_prompt = f"""ORIGINAL KEYWORD: "{keyword}"
 
-MARITIME CONTEXT:
-{MARITIME_CONTEXT}
+{context_label}:
+{context}
 
 TARGET PAGE INTENT (what the page is currently about):
 {json.dumps(target_intent or {}, indent=2)[:1500]}
@@ -115,6 +131,7 @@ def assess_competitiveness(
     winner_authorities: list,
     target_intent: dict | None = None,
     winner_summaries: list | None = None,
+    target_url: str = "",
 ) -> dict:
     """Main entry: difficulty estimation + realistic_to_rank + long-tail suggestions."""
     target_score = _composite_score(target_authority or {})
@@ -146,7 +163,8 @@ def assess_competitiveness(
         try:
             client = Groq(api_key=os.environ["GROQ_API_KEY"])
             long_tail_variants = _suggest_long_tail(
-                client, keyword, target_intent or {}, winner_summaries or []
+                client, keyword, target_intent or {}, winner_summaries or [],
+                target_url=target_url,
             )
         except Exception as e:
             long_tail_variants = [{"error": str(e)}]

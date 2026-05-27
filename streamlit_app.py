@@ -210,9 +210,10 @@ def render_diagnosis(diagnosis: dict, html_bytes: bytes, report_path: Path):
                 for dim, v in d["rubric"].items()
             ]
             st.table(rows)
-        if d.get("maritime_suggestions"):
-            st.markdown("**Maritime-flavoured suggestions**")
-            for s in d["maritime_suggestions"]:
+        suggestions = d.get("differentiation_suggestions") or d.get("maritime_suggestions") or []
+        if suggestions:
+            st.markdown("**Differentiation suggestions**")
+            for s in suggestions:
                 st.markdown(f"- {s}")
 
     with tab_dist:

@@ -187,12 +187,22 @@ def rank_fixes_by_impact(
         "llm_mentions": mentions,
     }
 
-    system_prompt = (
-        "You are a senior SEO + content strategist for ZeroNorth (maritime SaaS). "
-        "Rank the top 5 fixes by impact. Be ruthless: only the highest-leverage actions. "
-        "Each fix must be atomic, concrete, and reference specific bucket evidence. "
-        "Suggest fixes in the maritime context (vessel performance, voyage data, bunker prices, emissions) where relevant."
-    )
+    is_maritime = bool(url and "zeronorth.com" in url.lower())
+    if is_maritime:
+        system_prompt = (
+            "You are a senior SEO + content strategist for ZeroNorth (maritime SaaS). "
+            "Rank the top 5 fixes by impact. Be ruthless: only the highest-leverage actions. "
+            "Each fix must be atomic, concrete, and reference specific bucket evidence. "
+            "Suggest fixes in the maritime context (vessel performance, voyage data, bunker prices, emissions) where relevant."
+        )
+    else:
+        system_prompt = (
+            "You are a senior SEO + content strategist. Rank the top 5 fixes by impact. "
+            "Be ruthless: only the highest-leverage actions. Each fix must be atomic, concrete, "
+            "and reference specific bucket evidence. Suggestions must be specific to THIS page's "
+            "actual product, audience, and visible data — never invent assets or context that "
+            "aren't supported by the target URL's actual content."
+        )
 
     user_prompt = f"""Given this full 5-bucket diagnosis, return the top 5 fixes ranked by impact.
 
@@ -290,6 +300,7 @@ def _run_buckets_with_data(target_url: str, target_intent: dict, keywords: list,
                 bucket2.get("winners", []),
                 target_intent.get("intent", {}),
                 results,
+                target_url=target_url,
             )
         except Exception as e:
             bucket5 = {"realistic_to_rank": True, "error": str(e)}
@@ -300,6 +311,7 @@ def _run_buckets_with_data(target_url: str, target_intent: dict, keywords: list,
                     target_intent.get("page", {}),
                     target_intent.get("intent", {}),
                     results,
+                    target_url=target_url,
                 )
             except Exception as e:
                 bucket3_differentiation = {"differentiation_score": 0, "error": str(e)}

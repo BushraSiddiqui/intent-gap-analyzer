@@ -334,10 +334,10 @@
           {% endfor %}
         </table>
       {% endif %}
-      {% if d.maritime_suggestions %}
-        <h4>Maritime-flavoured suggestions</h4>
+      {% if d.differentiation_suggestions or d.maritime_suggestions %}
+        <h4>Differentiation suggestions</h4>
         <ul>
-          {% for s in d.maritime_suggestions %}
+          {% for s in (d.differentiation_suggestions or d.maritime_suggestions or []) %}
             <li>{{ s }}</li>
           {% endfor %}
         </ul>

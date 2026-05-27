@@ -32,6 +32,20 @@ ZeroNorth is a maritime SaaS platform with these proprietary data assets:
 - Industry partnerships (Veson, Spire Maritime, Monjasa, DNV, RightShip)
 """.strip()
 
+GENERIC_CONTEXT = """
+You're evaluating a B2B SaaS or content marketing page. Suggestions must be specific to the
+page's actual product, audience, and proprietary data sources — never generic SEO advice.
+Use only the evidence visible in the page content and SERP data. Do not invent data assets
+that don't exist on the target site.
+""".strip()
+
+
+def _pick_context(target_url: str) -> str:
+    """ZeroNorth-specific maritime context only for zeronorth.com URLs. Else generic."""
+    if target_url and "zeronorth.com" in target_url.lower():
+        return ZERONORTH_CONTEXT
+    return GENERIC_CONTEXT
+
 
 def _strip_code_fence(text: str) -> str:
     text = text.strip()
@@ -65,12 +79,23 @@ def _groq_call_with_retry(client, system: str, user: str, max_retries: int = 3) 
     raise last_error
 
 
-def score_differentiation(target_page: dict, target_intent: dict, serp_top_results: list) -> dict:
-    """Bucket 3 main entry. Returns rubric scores + similarity + maritime suggestions."""
+def score_differentiation(
+    target_page: dict,
+    target_intent: dict,
+    serp_top_results: list,
+    target_url: str = "",
+) -> dict:
+    """Bucket 3 main entry. Returns rubric scores + similarity + context-appropriate suggestions.
+
+    target_url determines whether ZeroNorth maritime context applies (for zeronorth.com pages)
+    or generic B2B SaaS context applies (for everything else).
+    """
     if not target_page:
         return _empty_result("no target page data")
 
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    context = _pick_context(target_url)
+    is_maritime = target_url and "zeronorth.com" in target_url.lower()
 
     target_summary = {
         "title": target_page.get("title", ""),
@@ -91,13 +116,16 @@ def score_differentiation(target_page: dict, target_intent: dict, serp_top_resul
     system_prompt = (
         "You are a senior content strategist evaluating whether a page is genuinely differentiated "
         "or just another generic article on the same topic. Be honest and harsh — if it's generic, "
-        "say so. Suggestions must leverage the maritime context provided."
+        "say so. Suggestions MUST be specific to the page's actual product, audience, and visible "
+        "data — never invent assets that aren't there."
     )
+
+    context_label = "MARITIME CONTEXT (ZeroNorth's data assets — use these in suggestions)" if is_maritime else "EVALUATION CONTEXT (be specific to this page, no invented assets)"
 
     user_prompt = f"""Evaluate the target page against the SERP winners using a 7-point differentiation rubric.
 
-MARITIME CONTEXT (ZeroNorth's data assets — use these in suggestions):
-{ZERONORTH_CONTEXT}
+{context_label}:
+{context}
 
 TARGET PAGE:
 {json.dumps(target_summary, indent=2)[:4000]}
@@ -116,7 +144,7 @@ SCORE EACH DIMENSION 0-10 with a 1-sentence evidence note:
 
 SIMILARITY: how similar is the target's structure and angle to the SERP winners (0-100, higher = more identical/copycat)?
 
-MARITIME SUGGESTIONS: 3-5 specific actions tied to ZeroNorth's data assets. Each suggestion must name a specific asset (e.g. "Embed a chart of bunker price spreads from Bunker Pricer for Rotterdam vs Singapore over Q1") not generic advice ("add more data").
+DIFFERENTIATION SUGGESTIONS: 3-5 specific actions for differentiation. Each must reference something concrete on this page's actual product or data (not invented assets). If maritime/ZeroNorth context applies, leverage those assets; otherwise tie suggestions to the page's actual subject matter. Avoid generic SEO platitudes.
 
 Return ONLY this JSON schema:
 {{
@@ -133,7 +161,7 @@ Return ONLY this JSON schema:
   "similarity_to_winners": 0-100 integer,
   "differentiation_score": 0-100 integer (rubric_score weighted higher than 100-similarity),
   "verdict": "highly_differentiated" | "moderately_differentiated" | "generic",
-  "maritime_suggestions": [
+  "differentiation_suggestions": [
     "Specific action referencing a named ZeroNorth data asset",
     "..."
   ]
@@ -161,6 +189,6 @@ def _empty_result(reason: str) -> dict:
         "similarity_to_winners": 0,
         "differentiation_score": 0,
         "verdict": "unknown",
-        "maritime_suggestions": [],
+        "differentiation_suggestions": [],
         "error": reason,
     }
