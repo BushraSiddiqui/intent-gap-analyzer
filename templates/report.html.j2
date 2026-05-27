@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Intent Gap Report — {{ target_url }}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.5; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.25rem; border-bottom: 2px solid #eee; padding-bottom: 0.4rem; margin-top: 2.5rem; }
+  h3 { font-size: 1.05rem; margin-top: 1.25rem; }
+  .meta { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
+  .card { background: #f9f9fb; padding: 0.9rem 1.1rem; border-radius: 8px; border: 1px solid #eaeaea; margin: 0.6rem 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { background: #f4f4f6; font-weight: 600; }
+  .cited-yes { color: #0a7c2f; font-weight: 600; }
+  .cited-no { color: #b91c1c; font-weight: 600; }
+  .p-P0 { background: #fff1f1; border-color: #fecaca; }
+  .p-P1 { background: #fff8e6; border-color: #fde68a; }
+  .p-P2 { background: #f0f7ff; border-color: #bfdbfe; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; margin-right: 0.4rem; }
+  .pill-P0 { background: #fecaca; color: #7f1d1d; }
+  .pill-P1 { background: #fde68a; color: #78350f; }
+  .pill-P2 { background: #bfdbfe; color: #1e3a8a; }
+  .pill-channel { background: #e5e7eb; color: #374151; }
+  code { background: #f0f0f3; padding: 1px 5px; border-radius: 3px; font-size: 0.85em; }
+  details { margin: 0.6rem 0; }
+  summary { cursor: pointer; font-weight: 500; }
+  pre { background: #f6f6f8; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.8rem; }
+  .chart-wrap { max-width: 700px; margin: 1rem 0; }
+</style>
+</head>
+<body>
+
+<h1>Intent Gap Report</h1>
+<div class="meta">
+  <strong>Target:</strong> <code>{{ target_url }}</code><br>
+  <strong>Keywords:</strong> {{ keywords | join(", ") }}
+</div>
+
+<h2>Target page intent</h2>
+<div class="card">
+  <strong>Primary topic:</strong> {{ target_intent.intent.primary_topic | default("—") }}<br>
+  <strong>Intent type:</strong> {{ target_intent.intent.intent_type | default("—") }}<br>
+  <strong>Audience:</strong> {{ target_intent.intent.target_audience | default("—") }}<br>
+  <strong>Key entities:</strong> {{ (target_intent.intent.key_entities or []) | join(", ") }}<br>
+  <strong>Content angles:</strong> {{ (target_intent.intent.content_angles or []) | join(", ") }}
+</div>
+
+<h2>GEO — LLM citation status</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Keyword</th>
+      <th>Groq Llama 3.3</th>
+      <th>DDG GPT-4o-mini</th>
+      <th>DDG Claude</th>
+      <th>Bing Copilot</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for kw, statuses in (gap_report.target_cited_in_llms or {}).items() %}
+    <tr>
+      <td>{{ kw }}</td>
+      <td class="{{ 'cited-yes' if statuses.groq_llama else 'cited-no' }}">{{ "cited" if statuses.groq_llama else "not cited" }}</td>
+      <td class="{{ 'cited-yes' if statuses.ddg_gpt4o_mini else 'cited-no' }}">{{ "cited" if statuses.ddg_gpt4o_mini else "not cited" }}</td>
+      <td class="{{ 'cited-yes' if statuses.ddg_claude else 'cited-no' }}">{{ "cited" if statuses.ddg_claude else "not cited" }}</td>
+      <td class="{{ 'cited-yes' if statuses.bing_copilot else 'cited-no' }}">{{ "cited" if statuses.bing_copilot else "n/a (stub)" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="chart-wrap"><canvas id="citationChart"></canvas></div>
+
+<h2>SEO gaps</h2>
+{% for gap in (gap_report.seo_gaps or []) %}
+  <div class="card p-{{ gap.priority or 'P2' }}">
+    <span class="pill pill-{{ gap.priority or 'P2' }}">{{ gap.priority or 'P2' }}</span>
+    <strong>{{ gap.gap_type }}</strong> — <em>{{ gap.keyword }}</em>
+    <p>{{ gap.description }}</p>
+    <small><strong>Evidence:</strong> {{ gap.evidence }}</small>
+  </div>
+{% else %}
+  <p><em>No SEO gaps returned.</em></p>
+{% endfor %}
+
+<h2>GEO gaps</h2>
+{% for gap in (gap_report.geo_gaps or []) %}
+  <div class="card p-{{ gap.priority or 'P2' }}">
+    <span class="pill pill-{{ gap.priority or 'P2' }}">{{ gap.priority or 'P2' }}</span>
+    <strong>{{ gap.gap_type }}</strong> — <em>{{ gap.keyword }}</em> on <code>{{ gap.llm }}</code>
+    <p>{{ gap.description }}</p>
+    {% if gap.competitor_sources %}
+      <small><strong>Competitor sources:</strong>
+        {% for src in gap.competitor_sources %}<code>{{ src }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+      </small>
+    {% endif %}
+  </div>
+{% else %}
+  <p><em>No GEO gaps returned.</em></p>
+{% endfor %}
+
+<h2>SEO ↔ GEO divergence</h2>
+<div class="card">{{ gap_report.seo_vs_geo_divergence or "—" }}</div>
+
+<h2>Top recommendations</h2>
+{% for rec in (gap_report.top_recommendations or []) %}
+  <div class="card p-{{ rec.priority or 'P2' }}">
+    <span class="pill pill-{{ rec.priority or 'P2' }}">{{ rec.priority or 'P2' }}</span>
+    <span class="pill pill-channel">{{ rec.channel }}</span>
+    <strong>{{ rec.action }}</strong>
+    <p>{{ rec.rationale }}</p>
+  </div>
+{% else %}
+  <p><em>No recommendations returned.</em></p>
+{% endfor %}
+
+<h2>Raw data</h2>
+<details>
+  <summary>SERP data (top results per engine)</summary>
+  <pre>{{ serp_data | tojson_pretty }}</pre>
+</details>
+<details>
+  <summary>LLM data (answers + citations)</summary>
+  <pre>{{ llm_data | tojson_pretty }}</pre>
+</details>
+
+<script>
+const citationData = {{ gap_report.target_cited_in_llms | tojson_pretty | safe }};
+const keywords = Object.keys(citationData || {});
+const llms = ["groq_llama", "ddg_gpt4o_mini", "ddg_claude", "bing_copilot"];
+const datasets = llms.map((llm, i) => ({
+  label: llm,
+  data: keywords.map(k => (citationData[k] && citationData[k][llm]) ? 1 : 0),
+  backgroundColor: ["#4f46e5", "#0891b2", "#16a34a", "#ea580c"][i],
+}));
+if (keywords.length) {
+  new Chart(document.getElementById("citationChart"), {
+    type: "bar",
+    data: { labels: keywords, datasets },
+    options: {
+      responsive: true,
+      plugins: { title: { display: true, text: "Citation count per keyword (1 = cited)" } },
+      scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } }
+    }
+  });
+}
+</script>
+
+</body>
+</html>
