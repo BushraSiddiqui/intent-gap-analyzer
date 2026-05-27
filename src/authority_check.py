@@ -12,8 +12,10 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import quote_plus, urlparse
 
-import requests
 from bs4 import BeautifulSoup
+
+from src.cache import ttl_cache
+from src.http_utils import http_get
 
 try:
     import whois
@@ -29,6 +31,7 @@ HEADERS = {
 }
 
 
+@ttl_cache(ttl_seconds=86400)  # domain age changes slowly — 24h cache
 def domain_age_years(domain: str) -> float:
     """Years since domain registration; 0.0 if whois unavailable, missing, or fails."""
     if not whois:
@@ -53,11 +56,12 @@ def domain_age_years(domain: str) -> float:
         return 0.0
 
 
+@ttl_cache(ttl_seconds=3600)
 def _google_results_count(query: str) -> int:
     """Approximate result count from a Google search. 0 on any failure."""
     url = f"https://www.google.com/search?q={quote_plus(query)}&num=20"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = http_get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
             return 0
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -77,11 +81,12 @@ def google_mention_count(domain: str, site: str) -> int:
     return _google_results_count(f'site:{site} "{domain}"')
 
 
+@ttl_cache(ttl_seconds=3600)
 def bing_linkfromdomain(domain: str) -> int:
     """Approximate outbound-link count using Bing's linkfromdomain: operator."""
     url = f"https://www.bing.com/search?q={quote_plus('linkfromdomain:' + domain)}&count=50"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = http_get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
             return 0
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -90,6 +95,7 @@ def bing_linkfromdomain(domain: str) -> int:
         return 0
 
 
+@ttl_cache(ttl_seconds=3600)
 def check_authority(url: str) -> dict:
     """Run all free authority signals for one URL."""
     parsed = urlparse(url if "://" in url else f"https://{url}")

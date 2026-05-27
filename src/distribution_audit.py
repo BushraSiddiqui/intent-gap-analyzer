@@ -9,8 +9,10 @@ import re
 import time
 from urllib.parse import quote_plus, urlparse
 
-import requests
 from bs4 import BeautifulSoup
+
+from src.cache import ttl_cache
+from src.http_utils import http_get
 
 HEADERS = {
     "User-Agent": (
@@ -32,10 +34,11 @@ CHANNELS = [
 ]
 
 
+@ttl_cache(ttl_seconds=3600)
 def _google_results_count(query: str) -> int:
     url = f"https://www.google.com/search?q={quote_plus(query)}&num=20"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = http_get(url, headers=HEADERS, timeout=15)
         if resp.status_code != 200:
             return 0
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -50,6 +53,7 @@ def _google_results_count(query: str) -> int:
         return 0
 
 
+@ttl_cache(ttl_seconds=3600)
 def _mentions_on_site(url: str, site: str) -> int:
     """Count Google results for `site:<site> "<url>"` and a domain-only fallback."""
     domain = urlparse(url if "://" in url else f"https://{url}").netloc.lower().replace("www.", "")
@@ -59,6 +63,7 @@ def _mentions_on_site(url: str, site: str) -> int:
     return _google_results_count(f'site:{site} "{domain}"')
 
 
+@ttl_cache(ttl_seconds=3600)
 def audit_distribution(url: str, sleep_between: float = 2.0) -> dict:
     """Main entry: run a Google scrape per channel, build score + suggestions."""
     channels_data = []

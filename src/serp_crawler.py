@@ -1,8 +1,10 @@
 import time
 from urllib.parse import quote_plus
 
-import requests
 from bs4 import BeautifulSoup
+
+from src.cache import ttl_cache
+from src.http_utils import http_get
 
 HEADERS = {
     "User-Agent": (
@@ -13,9 +15,10 @@ HEADERS = {
 }
 
 
+@ttl_cache(ttl_seconds=3600)
 def bing_search(query: str, num: int = 10) -> list:
     url = f"https://www.bing.com/search?q={quote_plus(query)}&count={num}"
-    resp = requests.get(url, headers=HEADERS, timeout=20)
+    resp = http_get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
     results = []
@@ -33,6 +36,7 @@ def bing_search(query: str, num: int = 10) -> list:
     return results[:num]
 
 
+@ttl_cache(ttl_seconds=3600)
 def duckduckgo_search(query: str, num: int = 10) -> list:
     from duckduckgo_search import DDGS
     with DDGS() as ddgs:
@@ -43,6 +47,7 @@ def duckduckgo_search(query: str, num: int = 10) -> list:
     ]
 
 
+@ttl_cache(ttl_seconds=3600)
 def google_search(query: str, num: int = 10) -> list:
     # googlesearch-python scrapes Google HTML — rate-limited, may break.
     from googlesearch import search

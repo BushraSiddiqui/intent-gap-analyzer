@@ -6,3 +6,5 @@ groq>=0.11
 duckduckgo-search>=6.0
 googlesearch-python>=1.2
 streamlit>=1.32
+tenacity>=8.2
+python-whois>=0.9

@@ -3,9 +3,11 @@ import os
 import re
 import time
 
-import requests
 from bs4 import BeautifulSoup
 from groq import Groq
+
+from src.cache import ttl_cache
+from src.http_utils import http_get
 
 HEADERS = {
     "User-Agent": (
@@ -18,8 +20,9 @@ HEADERS = {
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
+@ttl_cache(ttl_seconds=3600)
 def fetch_page(url: str) -> dict:
-    resp = requests.get(url, headers=HEADERS, timeout=20)
+    resp = http_get(url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
