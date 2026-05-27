@@ -2,151 +2,527 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Intent Gap Report — {{ target_url }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; color: #1a1a1a; line-height: 1.5; }
-  h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
-  h2 { font-size: 1.25rem; border-bottom: 2px solid #eee; padding-bottom: 0.4rem; margin-top: 2.5rem; }
-  h3 { font-size: 1.05rem; margin-top: 1.25rem; }
-  .meta { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
-  .card { background: #f9f9fb; padding: 0.9rem 1.1rem; border-radius: 8px; border: 1px solid #eaeaea; margin: 0.6rem 0; }
-  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
-  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; vertical-align: top; }
-  th { background: #f4f4f6; font-weight: 600; }
-  .cited-yes { color: #0a7c2f; font-weight: 600; }
-  .cited-no { color: #b91c1c; font-weight: 600; }
-  .p-P0 { background: #fff1f1; border-color: #fecaca; }
-  .p-P1 { background: #fff8e6; border-color: #fde68a; }
-  .p-P2 { background: #f0f7ff; border-color: #bfdbfe; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; margin-right: 0.4rem; }
-  .pill-P0 { background: #fecaca; color: #7f1d1d; }
-  .pill-P1 { background: #fde68a; color: #78350f; }
-  .pill-P2 { background: #bfdbfe; color: #1e3a8a; }
-  .pill-channel { background: #e5e7eb; color: #374151; }
-  code { background: #f0f0f3; padding: 1px 5px; border-radius: 3px; font-size: 0.85em; }
-  details { margin: 0.6rem 0; }
-  summary { cursor: pointer; font-weight: 500; }
-  pre { background: #f6f6f8; padding: 0.75rem; border-radius: 6px; overflow-x: auto; font-size: 0.8rem; }
-  .chart-wrap { max-width: 700px; margin: 1rem 0; }
+  :root {
+    --navy: #0A1F3D;
+    --teal: #00B5B0;
+    --ink: #1a1a1a;
+    --muted: #5a6477;
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --line: #e4e7ef;
+    --danger: #c52b3e;
+    --warn:   #d97706;
+    --ok:     #0a7c2f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", -apple-system, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { background: #eef1f7; padding: 1px 6px; border-radius: 4px; font-size: 0.86em; font-family: ui-monospace, SFMono-Regular, monospace; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(135deg, var(--navy) 0%, #14315a 100%);
+    color: white;
+    padding: 3rem 0 2.5rem;
+  }
+  .hero h1 { margin: 0 0 0.5rem; font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; }
+  .hero .meta { color: #b9c4d8; font-size: 0.95rem; margin-bottom: 2rem; }
+  .hero .meta code { background: rgba(255,255,255,0.1); color: #d6dceb; }
+  .hero-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 3rem; align-items: center; }
+  @media (max-width: 800px) { .hero-grid { grid-template-columns: 1fr; gap: 2rem; } }
+  .health-card { text-align: center; }
+  .health-score {
+    font-size: 5rem; font-weight: 800; line-height: 1;
+    color: var(--teal); letter-spacing: -0.04em;
+    display: inline-block;
+  }
+  .health-score-suffix { font-size: 1.5rem; color: #8a96ad; font-weight: 500; }
+  .health-verdict {
+    margin-top: 0.75rem;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: #e8ecf5;
+  }
+  .radar-wrap { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 1rem; }
+
+  /* Sections */
+  section { padding: 2.5rem 0; }
+  section h2 {
+    font-size: 1.35rem; font-weight: 700; margin: 0 0 1.25rem;
+    color: var(--navy); letter-spacing: -0.01em;
+  }
+  section h2 .sub { font-weight: 400; color: var(--muted); font-size: 0.9rem; margin-left: 0.5rem; }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    margin: 0.8rem 0;
+  }
+
+  /* Top fixes */
+  .fix-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--teal);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    margin: 0.8rem 0;
+    display: grid;
+    grid-template-columns: 50px 1fr auto;
+    gap: 1rem; align-items: start;
+  }
+  .fix-rank {
+    background: var(--navy); color: white;
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.05rem;
+  }
+  .fix-action { font-weight: 600; font-size: 1.02rem; margin: 0 0 0.4rem; color: var(--navy); }
+  .fix-why { color: var(--muted); font-size: 0.92rem; margin: 0; }
+  .fix-meta {
+    text-align: right; min-width: 140px;
+    font-size: 0.78rem; color: var(--muted);
+    line-height: 1.7;
+  }
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  }
+  .pill-impact-high { background: #fde7eb; color: var(--danger); }
+  .pill-impact-med  { background: #fff3df; color: var(--warn); }
+  .pill-impact-low  { background: #e6f4ec; color: var(--ok); }
+  .pill-bucket { background: #e8f7f6; color: var(--teal); }
+
+  /* Bucket sections */
+  details.bucket {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin: 0.6rem 0;
+    overflow: hidden;
+  }
+  details.bucket > summary {
+    cursor: pointer; padding: 1rem 1.25rem;
+    font-weight: 600; color: var(--navy);
+    display: flex; justify-content: space-between; align-items: center;
+    list-style: none;
+  }
+  details.bucket > summary::-webkit-details-marker { display: none; }
+  details.bucket > summary::after { content: "+"; font-size: 1.3rem; color: var(--muted); }
+  details.bucket[open] > summary::after { content: "−"; }
+  details.bucket .body { padding: 0 1.25rem 1.25rem; border-top: 1px solid var(--line); }
+  .bucket-score-tag {
+    margin-left: 0.75rem;
+    background: var(--bg);
+    padding: 2px 10px; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 600; color: var(--muted);
+  }
+
+  /* SERP comparison */
+  .serp-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0.85rem; margin: 0.8rem 0;
+  }
+  @media (max-width: 800px) { .serp-grid { grid-template-columns: 1fr 1fr; } }
+  .serp-cell {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 0.85rem;
+    font-size: 0.85rem;
+  }
+  .serp-cell.target { border-color: var(--teal); border-width: 2px; }
+  .serp-cell .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+  .serp-cell .url { word-break: break-word; font-size: 0.78rem; color: var(--ink); }
+
+  /* AI citation table */
+  table.citation { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; }
+  table.citation th, table.citation td { padding: 0.55rem 0.75rem; text-align: left; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+  table.citation th { background: var(--bg); font-weight: 600; color: var(--navy); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.yes { color: var(--ok); font-weight: 600; }
+  td.no  { color: var(--muted); }
+
+  /* Rubric table */
+  table.rubric { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 0.88rem; }
+  table.rubric td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.rubric td.dim { color: var(--navy); font-weight: 600; width: 200px; text-transform: capitalize; }
+  table.rubric td.score { width: 70px; text-align: right; font-weight: 700; }
+
+  /* Channel table (distribution) */
+  table.channels { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  table.channels th, table.channels td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--line); text-align: left; }
+  table.channels th { background: var(--bg); font-weight: 600; color: var(--navy); }
+  .badge-hit { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; background: #e6f4ec; color: var(--ok); font-weight: 600; }
+  .badge-miss { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; background: #fde7eb; color: var(--danger); font-weight: 600; }
+
+  /* Long-tail */
+  ul.longtail { list-style: none; padding: 0; }
+  ul.longtail li {
+    background: var(--card); border: 1px solid var(--line);
+    padding: 0.7rem 0.95rem; border-radius: 8px; margin: 0.4rem 0;
+    font-size: 0.93rem;
+  }
+  ul.longtail li code { font-weight: 600; color: var(--navy); }
+  ul.longtail .why { color: var(--muted); font-size: 0.83rem; display: block; margin-top: 0.15rem; }
+
+  /* Footer */
+  footer { padding: 2rem 0 3rem; color: var(--muted); font-size: 0.85rem; text-align: center; }
+
+  /* Misc */
+  .muted { color: var(--muted); }
+  .small { font-size: 0.85rem; }
 </style>
 </head>
 <body>
 
-<h1>Intent Gap Report</h1>
-<div class="meta">
-  <strong>Target:</strong> <code>{{ target_url }}</code><br>
-  <strong>Keywords:</strong> {{ keywords | join(", ") }}
+{# ============ HERO ============ #}
+<div class="hero">
+  <div class="container">
+    <h1>Intent Gap Diagnosis</h1>
+    <div class="meta">
+      <strong>Target:</strong> <code>{{ target_url }}</code>
+      &nbsp;·&nbsp;
+      <strong>Keywords:</strong> {{ keywords | join(", ") }}
+    </div>
+
+    <div class="hero-grid">
+      <div class="health-card">
+        <div>
+          <span class="health-score">{{ gap_report.health_score | default(0) }}</span><span class="health-score-suffix">/100</span>
+        </div>
+        <div class="health-verdict">{{ gap_report.verdict | default("No verdict") }}</div>
+      </div>
+      <div class="radar-wrap">
+        <canvas id="bucketRadar"></canvas>
+      </div>
+    </div>
+  </div>
 </div>
 
-<h2>Target page intent</h2>
-<div class="card">
-  <strong>Primary topic:</strong> {{ target_intent.intent.primary_topic | default("—") }}<br>
-  <strong>Intent type:</strong> {{ target_intent.intent.intent_type | default("—") }}<br>
-  <strong>Audience:</strong> {{ target_intent.intent.target_audience | default("—") }}<br>
-  <strong>Key entities:</strong> {{ (target_intent.intent.key_entities or []) | join(", ") }}<br>
-  <strong>Content angles:</strong> {{ (target_intent.intent.content_angles or []) | join(", ") }}
-</div>
+<div class="container">
 
-<h2>GEO — LLM citation status</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Keyword</th>
-      <th>Groq Llama 3.3</th>
-      <th>DDG GPT-4o-mini</th>
-      <th>DDG Claude</th>
-      <th>Bing Copilot</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for kw, statuses in (gap_report.target_cited_in_llms or {}).items() %}
-    <tr>
-      <td>{{ kw }}</td>
-      <td class="{{ 'cited-yes' if statuses.groq_llama else 'cited-no' }}">{{ "cited" if statuses.groq_llama else "not cited" }}</td>
-      <td class="{{ 'cited-yes' if statuses.ddg_gpt4o_mini else 'cited-no' }}">{{ "cited" if statuses.ddg_gpt4o_mini else "not cited" }}</td>
-      <td class="{{ 'cited-yes' if statuses.ddg_claude else 'cited-no' }}">{{ "cited" if statuses.ddg_claude else "not cited" }}</td>
-      <td class="{{ 'cited-yes' if statuses.bing_copilot else 'cited-no' }}">{{ "cited" if statuses.bing_copilot else "n/a (stub)" }}</td>
-    </tr>
+{# ============ TOP 5 FIXES ============ #}
+<section>
+  <h2>Top 5 ranked fixes <span class="sub">in order of expected impact</span></h2>
+  {% set fixes = gap_report.ranked_fixes or [] %}
+  {% if fixes and not (fixes|length == 1 and fixes[0].error) %}
+    {% for fix in fixes %}
+      {% if not fix.error %}
+      {% set imp = fix.expected_impact | default(0) %}
+      <div class="fix-card">
+        <div class="fix-rank">{{ fix.rank | default(loop.index) }}</div>
+        <div>
+          <p class="fix-action">{{ fix.action }}</p>
+          <p class="fix-why">{{ fix.why_this_matters }}</p>
+        </div>
+        <div class="fix-meta">
+          {% if imp >= 8 %}
+            <span class="pill pill-impact-high">impact {{ imp }}/10</span>
+          {% elif imp >= 5 %}
+            <span class="pill pill-impact-med">impact {{ imp }}/10</span>
+          {% else %}
+            <span class="pill pill-impact-low">impact {{ imp }}/10</span>
+          {% endif %}
+          <br>
+          <span class="pill pill-bucket">{{ fix.bucket }}</span>
+          <br>
+          <span class="muted small">{{ fix.effort_hours | default("?") }}h effort</span>
+        </div>
+      </div>
+      {% endif %}
     {% endfor %}
-  </tbody>
-</table>
+  {% else %}
+    <div class="card muted">No ranked fixes returned. Check the raw data section at the bottom.</div>
+  {% endif %}
+</section>
 
-<div class="chart-wrap"><canvas id="citationChart"></canvas></div>
+{# ============ 5-BUCKET DIAGNOSIS ============ #}
+<section>
+  <h2>5-bucket diagnosis</h2>
 
-<h2>SEO gaps</h2>
-{% for gap in (gap_report.seo_gaps or []) %}
-  <div class="card p-{{ gap.priority or 'P2' }}">
-    <span class="pill pill-{{ gap.priority or 'P2' }}">{{ gap.priority or 'P2' }}</span>
-    <strong>{{ gap.gap_type }}</strong> — <em>{{ gap.keyword }}</em>
-    <p>{{ gap.description }}</p>
-    <small><strong>Evidence:</strong> {{ gap.evidence }}</small>
-  </div>
-{% else %}
-  <p><em>No SEO gaps returned.</em></p>
-{% endfor %}
+  {# Bucket 1: Intent #}
+  <details class="bucket" open>
+    <summary>1. Intent match
+      {% if gap_report.bucket_scores %}<span class="bucket-score-tag">{{ gap_report.bucket_scores.intent }}/100</span>{% endif %}
+    </summary>
+    <div class="body">
+      {% for kw, pk in (gap_report.per_keyword or {}).items() %}
+        {% set b1 = pk.bucket1_intent or {} %}
+        <div class="card">
+          <strong>Keyword:</strong> <code>{{ kw }}</code> · <strong>Match score:</strong> {{ b1.match_score | default(0) }}/100 · <strong>Verdict:</strong> {{ b1.verdict | default("—") }}
+          <p class="muted small" style="margin: 0.5rem 0 0.25rem;">
+            Target format: <strong>{{ b1.target_format | default("—") }}</strong> · Winners' format: <strong>{{ b1.winners_dominant_format | default("—") }}</strong> ·
+            Target angle: <strong>{{ b1.target_angle | default("—") }}</strong> · Winners' angle: <strong>{{ b1.winners_dominant_angle | default("—") }}</strong>
+          </p>
+          {% if b1.rewrite_instruction %}
+            <p style="margin: 0.5rem 0 0;"><strong>Rewrite instruction:</strong> {{ b1.rewrite_instruction }}</p>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="muted small">No per-keyword data.</p>
+      {% endfor %}
+    </div>
+  </details>
 
-<h2>GEO gaps</h2>
-{% for gap in (gap_report.geo_gaps or []) %}
-  <div class="card p-{{ gap.priority or 'P2' }}">
-    <span class="pill pill-{{ gap.priority or 'P2' }}">{{ gap.priority or 'P2' }}</span>
-    <strong>{{ gap.gap_type }}</strong> — <em>{{ gap.keyword }}</em> on <code>{{ gap.llm }}</code>
-    <p>{{ gap.description }}</p>
-    {% if gap.competitor_sources %}
-      <small><strong>Competitor sources:</strong>
-        {% for src in gap.competitor_sources %}<code>{{ src }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
-      </small>
-    {% endif %}
-  </div>
-{% else %}
-  <p><em>No GEO gaps returned.</em></p>
-{% endfor %}
+  {# Bucket 2: Authority #}
+  <details class="bucket">
+    <summary>2. Authority gap
+      {% if gap_report.bucket_scores %}<span class="bucket-score-tag">{{ gap_report.bucket_scores.authority }}/100</span>{% endif %}
+    </summary>
+    <div class="body">
+      {% for kw, pk in (gap_report.per_keyword or {}).items() %}
+        {% set b2 = pk.bucket2_authority or {} %}
+        <div class="card">
+          <strong>Keyword:</strong> <code>{{ kw }}</code> · <strong>Gap:</strong> {{ b2.authority_gap | default("—") }}
+          <p class="muted small" style="margin: 0.3rem 0;">
+            Target score: <strong>{{ b2.target_score | default(0) }}/100</strong> ·
+            Winners' median: <strong>{{ b2.winner_median_score | default("—") }}/100</strong> ·
+            Raw gap: <strong>{{ b2.raw_gap | default("—") }}</strong>
+          </p>
+          {% if b2.target %}
+            <p class="small muted" style="margin: 0.3rem 0;">
+              Target domain: <code>{{ b2.target.domain }}</code> · age {{ b2.target.age_years }}y ·
+              Reddit mentions: {{ b2.target.reddit_mentions }} ·
+              LinkedIn mentions: {{ b2.target.linkedin_mentions }} ·
+              Bing outbound: {{ b2.target.bing_outbound_links }}
+            </p>
+          {% endif %}
+          {% if b2.interpretation %}<p style="margin: 0.5rem 0 0;">{{ b2.interpretation }}</p>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </details>
 
-<h2>SEO ↔ GEO divergence</h2>
-<div class="card">{{ gap_report.seo_vs_geo_divergence or "—" }}</div>
+  {# Bucket 3: Differentiation #}
+  <details class="bucket">
+    <summary>3. Differentiation
+      {% if gap_report.bucket_scores %}<span class="bucket-score-tag">{{ gap_report.bucket_scores.differentiation }}/100</span>{% endif %}
+    </summary>
+    <div class="body">
+      {% set d = gap_report.differentiation or {} %}
+      <div class="card">
+        <strong>Score:</strong> {{ d.differentiation_score | default(0) }}/100 ·
+        <strong>Verdict:</strong> {{ d.verdict | default("—") }} ·
+        <strong>Similarity to winners:</strong> {{ d.similarity_to_winners | default(0) }}/100
+      </div>
+      {% if d.rubric %}
+        <h4>7-point rubric</h4>
+        <table class="rubric">
+          {% for dim, scoring in d.rubric.items() %}
+            <tr>
+              <td class="dim">{{ dim | replace("_", " ") }}</td>
+              <td class="score">{{ scoring.score | default(0) }}/10</td>
+              <td class="muted">{{ scoring.evidence | default("—") }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% endif %}
+      {% if d.maritime_suggestions %}
+        <h4>Maritime-flavoured suggestions</h4>
+        <ul>
+          {% for s in d.maritime_suggestions %}
+            <li>{{ s }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  </details>
 
-<h2>Top recommendations</h2>
-{% for rec in (gap_report.top_recommendations or []) %}
-  <div class="card p-{{ rec.priority or 'P2' }}">
-    <span class="pill pill-{{ rec.priority or 'P2' }}">{{ rec.priority or 'P2' }}</span>
-    <span class="pill pill-channel">{{ rec.channel }}</span>
-    <strong>{{ rec.action }}</strong>
-    <p>{{ rec.rationale }}</p>
-  </div>
-{% else %}
-  <p><em>No recommendations returned.</em></p>
-{% endfor %}
+  {# Bucket 4: Distribution #}
+  <details class="bucket">
+    <summary>4. Distribution
+      {% if gap_report.bucket_scores %}<span class="bucket-score-tag">{{ gap_report.bucket_scores.distribution }}/100</span>{% endif %}
+    </summary>
+    <div class="body">
+      {% set dist = gap_report.distribution or {} %}
+      <div class="card">
+        <strong>Score:</strong> {{ dist.distribution_score | default(0) }}/100 ·
+        <strong>Verdict:</strong> {{ dist.verdict | default("—") }}
+        {% if dist.interpretation %}<p style="margin: 0.5rem 0 0;">{{ dist.interpretation }}</p>{% endif %}
+      </div>
+      {% if dist.channels_audited %}
+        <table class="channels">
+          <thead><tr><th>Channel</th><th>Category</th><th>Mentions</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for ch in dist.channels_audited %}
+              <tr>
+                <td>{{ ch.channel }}</td>
+                <td class="muted">{{ ch.category | replace("_", " ") }}</td>
+                <td>{{ ch.mentions }}</td>
+                <td>{% if ch.hit %}<span class="badge-hit">present</span>{% else %}<span class="badge-miss">missing</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+      {% if dist.suggestions %}
+        <h4>Channel actions</h4>
+        <ul>
+          {% for sg in dist.suggestions %}
+            <li><strong>{{ sg.channel }}:</strong> {{ sg.action }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  </details>
 
-<h2>Raw data</h2>
-<details>
-  <summary>SERP data (top results per engine)</summary>
-  <pre>{{ serp_data | tojson_pretty }}</pre>
-</details>
-<details>
-  <summary>LLM data (answers + citations)</summary>
-  <pre>{{ llm_data | tojson_pretty }}</pre>
-</details>
+  {# Bucket 5: Competitiveness #}
+  <details class="bucket">
+    <summary>5. Competitiveness
+      {% if gap_report.bucket_scores %}<span class="bucket-score-tag">{{ gap_report.bucket_scores.competitiveness }}/100</span>{% endif %}
+    </summary>
+    <div class="body">
+      {% for kw, pk in (gap_report.per_keyword or {}).items() %}
+        {% set b5 = pk.bucket5_competitiveness or {} %}
+        <div class="card">
+          <strong>Keyword:</strong> <code>{{ kw }}</code> ·
+          <strong>Difficulty:</strong> {{ b5.difficulty_label | default("—") }} ({{ b5.difficulty_score | default(0) }}/100) ·
+          <strong>Realistic to rank:</strong> {{ b5.realistic_to_rank and "yes" or "no" }}
+          {% if b5.gap_assessment %}<p style="margin: 0.5rem 0 0;">{{ b5.gap_assessment }}</p>{% endif %}
+          {% if b5.long_tail_variants %}
+            <h4>Narrower long-tail variants</h4>
+            <ul class="longtail">
+              {% for v in b5.long_tail_variants %}
+                {% if not v.error %}
+                <li>
+                  <code>{{ v.keyword }}</code>
+                  <span class="muted small">· {{ v.estimated_competition | default("—") }} competition</span>
+                  <span class="why">{{ v.why_narrower | default("") }}</span>
+                </li>
+                {% endif %}
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+</section>
 
+{# ============ SERP COMPARISON ============ #}
+<section>
+  <h2>Target vs top 3 SERP winners <span class="sub">side by side</span></h2>
+  {% for kw, pk in (gap_report.per_keyword or {}).items() %}
+    <h3 style="font-size: 1rem; color: var(--navy); margin: 1.2rem 0 0.5rem;">Keyword: <code>{{ kw }}</code></h3>
+    <div class="serp-grid">
+      <div class="serp-cell target">
+        <div class="label">Your page</div>
+        <div class="url">{{ target_url }}</div>
+        <p class="muted small" style="margin: 0.4rem 0 0;">{{ (gap_report.target_intent.intent or {}).primary_topic | default("—") }}</p>
+      </div>
+      {% for url in (pk.top_serp_urls or [])[:3] %}
+        <div class="serp-cell">
+          <div class="label">Winner #{{ loop.index }}</div>
+          <div class="url"><a href="{{ url }}" target="_blank" rel="noopener">{{ url }}</a></div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endfor %}
+</section>
+
+{# ============ AI CITATION MAP ============ #}
+<section>
+  <h2>AI citation map <span class="sub">does each LLM mention your domain?</span></h2>
+  <p class="muted small" style="margin-bottom: 0.75rem;">
+    Free-tier LLMs (Groq Llama, DuckDuckGo Chat) have no web access. "Yes" here means the model
+    already knows your brand from its training data. "No" is the default for less-recognised brands.
+  </p>
+  <table class="citation">
+    <thead>
+      <tr>
+        <th>Keyword</th>
+        <th>Groq Llama 3.3</th>
+        <th>DDG GPT-4o-mini</th>
+        <th>DDG Claude</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for kw, statuses in (gap_report.target_cited_in_llms or {}).items() %}
+        <tr>
+          <td>{{ kw }}</td>
+          <td class="{{ 'yes' if statuses.groq_llama else 'no' }}">{{ "mentioned" if statuses.groq_llama else "no mention" }}</td>
+          <td class="{{ 'yes' if statuses.ddg_gpt4o_mini else 'no' }}">{{ "mentioned" if statuses.ddg_gpt4o_mini else "no mention" }}</td>
+          <td class="{{ 'yes' if statuses.ddg_claude else 'no' }}">{{ "mentioned" if statuses.ddg_claude else "no mention" }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted">No citation data.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ============ RAW DATA ============ #}
+<section>
+  <h2>Raw data <span class="sub">debugging</span></h2>
+  <details>
+    <summary class="muted small">Diagnosis JSON</summary>
+    <pre style="background: var(--card); padding: 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.78rem;">{{ gap_report | tojson_pretty }}</pre>
+  </details>
+</section>
+
+<footer>
+  Generated by Intent Gap Analyzer · ZeroNorth maritime SEO/GEO diagnostic
+</footer>
+
+</div>
+
+{# ============ RADAR CHART ============ #}
 <script>
-const citationData = {{ gap_report.target_cited_in_llms | tojson_pretty | safe }};
-const keywords = Object.keys(citationData || {});
-const llms = ["groq_llama", "ddg_gpt4o_mini", "ddg_claude", "bing_copilot"];
-const datasets = llms.map((llm, i) => ({
-  label: llm,
-  data: keywords.map(k => (citationData[k] && citationData[k][llm]) ? 1 : 0),
-  backgroundColor: ["#4f46e5", "#0891b2", "#16a34a", "#ea580c"][i],
-}));
-if (keywords.length) {
-  new Chart(document.getElementById("citationChart"), {
-    type: "bar",
-    data: { labels: keywords, datasets },
+  const bucketScores = {{ gap_report.bucket_scores | tojson_pretty | safe }} || {};
+  const labels = ["Intent", "Authority", "Differentiation", "Distribution", "Competitiveness"];
+  const data = [
+    bucketScores.intent || 0,
+    bucketScores.authority || 0,
+    bucketScores.differentiation || 0,
+    bucketScores.distribution || 0,
+    bucketScores.competitiveness || 0,
+  ];
+  new Chart(document.getElementById("bucketRadar"), {
+    type: "radar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Bucket score",
+        data: data,
+        backgroundColor: "rgba(0, 181, 176, 0.25)",
+        borderColor: "#00B5B0",
+        borderWidth: 2,
+        pointBackgroundColor: "#00B5B0",
+        pointRadius: 4,
+      }],
+    },
     options: {
       responsive: true,
-      plugins: { title: { display: true, text: "Citation count per keyword (1 = cited)" } },
-      scales: { y: { beginAtZero: true, max: 1, ticks: { stepSize: 1 } } }
+      plugins: { legend: { display: false } },
+      scales: {
+        r: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { color: "#b9c4d8", backdropColor: "transparent", stepSize: 25 },
+          grid: { color: "rgba(255,255,255,0.15)" },
+          angleLines: { color: "rgba(255,255,255,0.15)" },
+          pointLabels: { color: "#e8ecf5", font: { size: 12, family: "Inter" } },
+        }
+      }
     }
   });
-}
 </script>
 
 </body>
